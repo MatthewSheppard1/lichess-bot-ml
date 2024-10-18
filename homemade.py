@@ -9,9 +9,8 @@ import random
 from lib.engine_wrapper import MinimalEngine
 from lib.types import MOVE, HOMEMADE_ARGS_TYPE
 import logging
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from moveNN import MoveNN
+
 
 
 # Use this logger variable to print messages to the console or log files.
@@ -19,22 +18,7 @@ import torch.nn.functional as F
 # logger.debug("message") will only print "message" if verbose logging is enabled.
 logger = logging.getLogger(__name__)
 
-class PieceNN(nn.Module):
-    def __init__(self):
-        super(PieceNN, self).__init__()
-        self.fc1 = nn.Linear(34, 30)
-        self.fc2 = nn.Linear(30, 30)
-        self.fc3 = nn.Linear(30, 30)
 
-    def set_weights(self, weights: list[torch.tensor]):
-        self.fc1.weight.data = weights[0]
-        self.fc2.weight.data = weights[1]
-        self.fc3.weight.data = weights[2]
-
-    def forward(self, input):
-        f1 = F.relu(self.fc1(input))
-        f2 = F.relu(self.fc2(f1))
-        output = self.fc3(f2)
 
 class ExampleEngine(MinimalEngine):
     """An example engine that all homemade engines inherit."""
@@ -46,43 +30,12 @@ class ChessBot(MinimalEngine):
     SAVED_WEIGHTS_PATH = "./saved_weights.txt"
     past_moves: list = []
     past_states: list[chess.Board] = []
-    pawn_nn: PieceNN = PieceNN()
-    knight_nn: PieceNN = PieceNN()
-    bishop_nn: PieceNN = PieceNN()
-    rook_nn: PieceNN = PieceNN()
-    queen_nn: PieceNN = PieceNN()
-    king_nn: PieceNN = PieceNN()
+    move_nn: MoveNN = MoveNN()
     counter: int = 0
 
 
 
-    def update_stored_weights(self, tensors: list[list[torch.tensor]]):
-        #should happen at end of game
-        f = open(self.SAVED_STATES_PATH, "w")
-        for network in tensors:
-            for t in network:
-                temp = ""
-                for i in t:
-                    temp += str(i) + ","
-                temp = temp[:-1] + "\n"
-                f.write(temp)
-        f.close()
 
-    def read_stored_weights(self) -> list[list[torch.tensor]]:
-        #should happen at initialization of engine or beginning of game
-        f = open(self.SAVED_STATES_PATH, "r")
-        tensors = [[]]
-        for line in f:
-            curr_tensor = 0
-            if(line == "\n"):
-                curr_tensor += 1
-                tensors.append([])
-            temp = line.split(",")
-            for i in range(len(temp)):
-                temp[i] = float(temp[i])
-            tensors[curr_tensor].append(temp)
-        f.close()
-        return tensors
 
     def search(self, board: chess.Board, *args: HOMEMADE_ARGS_TYPE) -> PlayResult:
         #if turn 1 initialize neural nets
