@@ -9,7 +9,9 @@ import random
 from lib.engine_wrapper import MinimalEngine
 from lib.types import MOVE, HOMEMADE_ARGS_TYPE
 import logging
-from moveNN import MoveNN
+from chessNN import ChessNN
+from encoder_decoder import *
+import torch.nn.functional as F
 
 
 
@@ -26,28 +28,17 @@ class ExampleEngine(MinimalEngine):
     pass
 
 
+chessnn = ChessNN()
+chessnn.load_weights()
 class ChessBot(MinimalEngine):
-    SAVED_WEIGHTS_PATH = "./saved_weights.txt"
-    past_moves: list = []
-    past_states: list[chess.Board] = []
-    move_nn: MoveNN = MoveNN()
-    counter: int = 0
-
-
-
-
-
     def search(self, board: chess.Board, *args: HOMEMADE_ARGS_TYPE) -> PlayResult:
-        #if turn 1 initialize neural nets
-        if(self.counter == 0):
-            weights = self.read_stored_weights()
+        val, policy = chessnn(encode_board(board))
+        policy *= make_move_mask(board)
+        move_list, probs = decode_mask(policy)
 
+        probs = F.softmax(probs, 0)
 
-
-        #if game over backpropagate  and save new nn values (other rewards like piece taken?)
-
-        #else: compare outputs of all moves, save state and move, return best one
-
+        return PlayResult(move_list[torch.argmax(probs)], None)
 
 # Bot names and ideas from tom7's excellent eloWorld video
 class RandomMove(ExampleEngine):
