@@ -1,5 +1,6 @@
 import chess
 import torch
+import numpy as np
 
 # Layers:
 # 0-11 piece representation
@@ -26,21 +27,99 @@ def encode_board(board: chess.Board):
 
 
 #TODO: idk if i'll actually need this, so i'll finish if I find a need for it
-def decode_board(encoded) -> chess.Board:
-    decoded = torch.zeros([64])
+def decode_board(encoded, batch_size):
+    boards = []
+    key = ['P', 'N', 'B', 'R', 'Q', 'K']
 
-    for i in range(len(encoded)):
-        for j in range(len(encoded[0])):
-            for k in range(len(encoded[0][0])):
-                if(k == 1):
-                    pass
-    return chess.Board()
+    for b in range(batch_size):
+        decoded = []
+        for i in range(8):
+            decoded.append([])
+            for j in range(8):
+                decoded[i].append(" ")
+
+        for k in range(len(encoded[0])):
+            for i in range(len(encoded[0][0])):
+                for j in range(len(encoded[0][0][0])):
+                    if(encoded[b][k][i][j] > 0):
+                        c = key[k % 6]
+                        if(k >= 6):
+                            c = c.lower()
+                        decoded[i][j] = c
+        s = ""
+        space_count = 0
+        for i in range(8):
+            for j in range(8):
+                if(decoded[i][j] == " "):
+                    space_count += 1
+                elif(space_count > 0):
+                    s += str(space_count) + decoded[i][j]
+                    space_count = 0
+                else:
+                    s += decoded[i][j]
+            if (space_count > 0):
+                s += str(space_count)
+                space_count = 0
+            if(i < 7):
+                s += "/"
+
+        s += " w"
+
+        boards.append(chess.Board(s))
+
+    return boards
 
 
 def get_move_mask_index(dist, direction):
     #directions: 0-7 clockwise starting up
     #0-55
     return direction * 7 + dist - 1
+
+def get_move_index(move: chess.Move, board: chess.Board):
+    piece = board.piece_at(move.from_square)
+    vals = "abcdefgh"
+    move_str = move.uci()
+    coords = [int(move_str[1]) - 1, int(move_str[3]) - 1, vals.find(move_str[0]), vals.find(move_str[2])]
+    if (piece.symbol().lower() == "n"):
+        direction = 0
+        if (coords[0] - coords[1] == -2 and coords[2] - coords[3] == -1):
+            direction = 0
+        elif (coords[0] - coords[1] == -1 and coords[2] - coords[3] == -2):
+            direction = 1
+        elif (coords[0] - coords[1] == 1 and coords[2] - coords[3] == -2):
+            direction = 2
+        elif (coords[0] - coords[1] == 2 and coords[2] - coords[3] == -1):
+            direction = 3
+        elif (coords[0] - coords[1] == 2 and coords[2] - coords[3] == 1):
+            direction = 4
+        elif (coords[0] - coords[1] == 1 and coords[2] - coords[3] == 2):
+            direction = 5
+        elif (coords[0] - coords[1] == -1 and coords[2] - coords[3] == 2):
+            direction = 6
+        elif (coords[0] - coords[1] == -2 and coords[2] - coords[3] == 1):
+            direction = 7
+        return coords[2] * 64 * 8 + coords[0] * 64 + 56 + direction
+    else:
+        dist = max(abs(coords[0] - coords[1]), abs(coords[2] - coords[3]))
+        direction = 0
+        if (coords[0] - coords[1] < 0 and coords[2] - coords[3] < 0):
+            direction = 1
+        elif (coords[0] - coords[1] > 0 and coords[2] - coords[3] < 0):
+            direction = 3
+        elif (coords[0] - coords[1] > 0 and coords[2] - coords[3] > 0):
+            direction = 5
+        elif (coords[0] - coords[1] < 0 and coords[2] - coords[3] > 0):
+            direction = 7
+        elif (coords[0] - coords[1] < 0 and coords[2] - coords[3] == 0):
+            direction = 0
+        elif (coords[0] - coords[1] == 0 and coords[2] - coords[3] < 0):
+            direction = 2
+        elif (coords[0] - coords[1] > 0 and coords[2] - coords[3] == 0):
+            direction = 4
+        elif (coords[0] - coords[1] == 0 and coords[2] - coords[3] > 0):
+            direction = 6
+
+        return coords[2] * 64 * 8 + coords[0] * 64 + get_move_mask_index(dist, direction)
 
 
 def make_move_mask(board: chess.Board):
@@ -115,7 +194,7 @@ def decode_move(move_t):
 
 
 
-def decode_mask(mask, board: chess.Board, batch_size=None):
+def decode_mask(mask, boards: list[chess.Board], batch_size=None):
     if(batch_size is None):
         moves = []
         probs = []
@@ -167,12 +246,11 @@ def decode_mask(mask, board: chess.Board, batch_size=None):
                                 mods[1] = -1
                             if (direction in [5, 6, 7]):
                                 mods[0] = -1
-
                             coords[2] = coords[0] + (mods[0] * dist)
                             coords[3] = coords[1] + (mods[1] * dist)
 
                         move_uci = vals[coords[0]] + str(coords[1]) + vals[coords[2]] + str(coords[3])
-                        if((coords[3] == 1 or coords[3] == 8) and board.piece_type_at(chess.parse_square(vals[coords[0]] + str(coords[1]))) == 1):
+                        if((coords[3] == 1 or coords[3] == 8) and boards[0].piece_type_at(chess.parse_square(vals[coords[0]] + str(coords[1]))) == 1):
                             move_uci += "q"
 
                         moves.append(chess.Move.from_uci(move_uci))
@@ -187,9 +265,9 @@ def decode_mask(mask, board: chess.Board, batch_size=None):
         for b in range(batch_size):
             moves = []
             probs = []
-            for i in range(len(mask)):
-                for j in range(len(mask[0])):
-                    for k in range(len(mask[0][0])):
+            for i in range(len(mask[0])):
+                for j in range(len(mask[0][0])):
+                    for k in range(len(mask[0][0][0])):
                         coords = [i, j + 1, 0, 0]
                         if (mask[b][i][j][k] != 0):
                             if (k > 55):
@@ -237,10 +315,8 @@ def decode_mask(mask, board: chess.Board, batch_size=None):
                                 coords[2] = coords[0] + (mods[0] * dist)
                                 coords[3] = coords[1] + (mods[1] * dist)
 
-                            print(b, i, j, k)
-
                             move_uci = vals[coords[0]] + str(coords[1]) + vals[coords[2]] + str(coords[3])
-                            if ((coords[3] == 1 or coords[3] == 8) and board.piece_type_at(
+                            if ((coords[3] == 1 or coords[3] == 8) and boards[b].piece_type_at(
                                     chess.parse_square(vals[coords[0]] + str(coords[1]))) == 1):
                                 move_uci += "q"
 

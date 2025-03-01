@@ -205,34 +205,37 @@ def self_play(network, num_games, max_mcts_iter, game_depth_limit):
             mask = make_move_mask(board)
             masks.append(mask)
             policy = policy.squeeze(0) * mask
-            move_list, probs = decode_mask(policy, board)
-            for j in range(len(move_list)):
-                if(move_list[j] == right_move):
-                    break
-            moves.append(j)
-            probs = F.softmax(probs, 0)
+            policy = F.normalize(policy, dim=0)
+            move_list, probs = decode_mask(policy, [board])
+            moves.append(get_move_index(right_move, board))
 
-            sample_sum = 0
-            rand = random.random()
             idx = 0
-            for j in range(len(probs)):
-                sample_sum += probs[j]
-                if(sample_sum >= rand):
-                    idx = j
-                    break
+            found_move = False
+            while not found_move:
+                sample_sum = 0
+                rand = random.random()
 
+                for j in range(len(probs)):
+                    sample_sum += probs[j]
+                    if(sample_sum >= rand):
+                        idx = j
+                        break
 
+                if root_node.children[move_list[idx]] is not None:
+                    found_move = True
+            """
             for m in root_node.moves:
                 if (m != move_list[idx]):
                     if(root_node.children[m] is not None):
                         root_node.children[m].delete_all()
+            """
 
             root_node = root_node.children[move_list[idx]]
             board.push(move_list[idx])
             if(count >= game_depth_limit):
+                print("Max depth reached")
                 break
             count += 1
-            print(count)
         result = board.outcome(claim_draw=True)
         winner = None
         if(result is not None):
@@ -240,15 +243,18 @@ def self_play(network, num_games, max_mcts_iter, game_depth_limit):
 
         print("Game Over")
 
+        colors = [chess.WHITE, chess.BLACK]
+
         #Add game data to data list
         for j in range(len(states)):
+            turn = colors[j % 2]
             z = 1
             if(winner == None):
                 z = 0
-            elif(states[j].turn != winner):
+            elif(turn != winner):
                 z = -1
 
-            data.append((states[j], moves[j], z, masks[j]))
+            data.append((states[j], moves[j], torch.tensor(z, dtype=torch.float), masks[j]))
     print("Self-Play Complete")
     return data
 
